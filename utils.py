@@ -10,15 +10,16 @@ from sklearn.model_selection import (train_test_split,
 from sklearn.metrics import confusion_matrix, auc, roc_curve, roc_auc_score
 
 
-def plot_categorical(series):
+def plot_categorical(series, axes=None):
     """ A shortcut for plotting categorical features
     """
 
-    _, axes = plt.subplots(nrows=1, ncols=1, sharex=True, figsize=(12, 3))
+    if not axes:
+        _, axes = plt.subplots(nrows=1, ncols=1, sharex=True, figsize=(12, 3))
 
     (series.value_counts(normalize=True)
            .sort_index()
-           .plot(ax=axes, kind='bar', rot='horizontal'))
+           .plot(ax=axes, kind='bar', rot='horizontal', title=series.name))
 
 
 def downsample(x, y):
