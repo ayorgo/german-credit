@@ -10,24 +10,15 @@ from sklearn.model_selection import (train_test_split,
 from sklearn.metrics import confusion_matrix, auc, roc_curve, roc_auc_score
 
 
-def plot_categorical(df, feature):
+def plot_categorical(series):
     """ A shortcut for plotting categorical features
     """
 
-    _, axes = plt.subplots(nrows=2, ncols=1, sharex=True, figsize=(12, 6))
+    _, axes = plt.subplots(nrows=1, ncols=1, sharex=True, figsize=(12, 3))
 
-    gb = df.groupby(feature)['class']
-
-    (gb.value_counts(dropna=False, normalize=True)
-       .unstack()
-       .plot(ax=axes[0], kind='bar', stacked=True)
-       .grid(axis='y'))
-    (gb.value_counts(dropna=False)
-       .div(len(df))
-       .unstack()
-       .sort_index()
-       .plot(ax=axes[1], kind='bar', stacked=True, rot='horizontal')
-       .axhline(y=0.05, linewidth=1, color='black', linestyle='--'))
+    (series.value_counts(normalize=True)
+           .sort_index()
+           .plot(ax=axes, kind='bar', rot='horizontal'))
 
 
 def downsample(x, y):
@@ -172,5 +163,3 @@ def visualize_metrics(metrics):
              tpr_mean/(tpr_mean + fnr_mean),
              marker='o',
              color='black')
-
-
