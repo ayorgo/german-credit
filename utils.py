@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import scipy.stats as st
 import requests
 from IPython.core.display import HTML
 import matplotlib.pyplot as plt
@@ -8,6 +9,22 @@ from sklearn.model_selection import (train_test_split,
                                      StratifiedKFold,
                                      GridSearchCV)
 from sklearn.metrics import confusion_matrix, auc, roc_curve, roc_auc_score
+
+
+class AggregatedClassifier:
+    def __init__(self, estimators, aggregator, **kwargs):
+        self.__aggregator = aggregator
+        self.kwargs = kwargs
+        self.estimators = estimators
+
+    def __predict_single(self, estimator, X):
+        return estimator.predict_proba(X)[:, 1]
+
+    def predict_proba(self, X):
+        return self.__aggregator([self.__predict_single(estimator, X)
+                                 for estimator
+                                 in self.estimators],
+                                 **self.kwargs)
 
 
 def plot_categorical(series, axes=None):
