@@ -5,9 +5,11 @@ from IPython.core.display import HTML
 import matplotlib.pyplot as plt
 from sklearn.utils import resample
 from sklearn.model_selection import (train_test_split,
+                                     cross_validate,
                                      StratifiedKFold,
-                                     GridSearchCV)
+                                     RandomizedSearchCV)
 from sklearn.metrics import confusion_matrix, auc, roc_curve, roc_auc_score
+import imblearn.pipeline as imb_pipe
 
 
 class AggregatedClassifier:
@@ -67,32 +69,117 @@ def downsample(x, y):
     return x_downsampled, y_downsampled
 
 
-def train(x, y, estimator, params, iter_no):
-    """ Training bootstrap utilising stratified K-fold cross validation
+def nested_cv(X, y, est, p_grid, scoring, inner_splits, outer_splits,
+              rand_state=None, randcv_budget=20):
+
+    # We fix rand_state here for the nested CV splits to be the same
+    # for each classifier so we can meaningfully compare their scores
+    if rand_state is None:
+        rand_state = np.random.randint(123456789)
+
+    # According to Kohavi, 1995:
+    # "... stratification is generally a better scheme, both in terms of bias
+    # and variance, when compared to regular cross-validation."
+    inner_cv = StratifiedKFold(n_splits=inner_splits,
+                               shuffle=True,
+                               random_state=rand_state)
+
+    # Inner CV (search for the best set of hyper-parameters)
+    clf = RandomizedSearchCV(estimator=est,
+                             param_distributions=p_grid,
+                             n_iter=randcv_budget,
+                             cv=inner_cv,
+                             iid=False, # True?
+                             scoring=scoring,
+                             n_jobs=-1)
+
+    # Outer CV (cross-validate the best classifier)
+    if outer_splits:
+        outer_cv = StratifiedKFold(n_splits=outer_splits,
+                                   shuffle=True,
+                                   random_state=rand_state)
+        cv_results = cross_validate(estimator=clf,
+                                    X=X,
+                                    y=y,
+                                    cv=outer_cv,
+                                    scoring=scoring,
+                                    return_estimator=True)
+        score = cv_results['test_score'].mean()
+        estimator = AggregatedClassifier(cv_results['estimator'], np.mean)
+
+        return score, estimator
+    else:
+        clf.fit(X, y)
+
+        return clf.best_score_, clf.best_estimator_
+
+
+def compare_classifiers(X, y, ests, scoring, trials, inner_splits,
+                        outer_splits=None, randcv_budget=20):
+
+    # For every model type
+    for label, steps, p_grid in ests:
+        cv_scores = np.empty(trials, dtype=float)
+        cv_estimators = np.empty(trials, dtype=object)
+
+        # Collect results from multiple trials of (nested) CV
+        # TODO: RepeatedKFold? RepeatedStratifiedKFold?
+        for trial in range(trials):
+            est = imb_pipe.Pipeline(steps)
+            cv_scores[trial], cv_estimators[trial] = nested_cv(X,
+                                                               y,
+                                                               est,
+                                                               p_grid,
+                                                               scoring,
+                                                               inner_splits,
+                                                               outer_splits,
+                                                               randcv_budget)
+        yield label, cv_scores, cv_estimators
+
+
+def visualise_scores(results, y, scoring, balance, inner_splits,
+                     outer_splits=None):
+    """Plot the scores distribution to assess stability
+       of the model selection process
     """
 
-    for _ in range(iter_no):
-        x_downsampled, y_downsampled = downsample(x, y)
+    size = sum(y)*2 if balance else len(y)
+    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(12, 5))
 
-        size = int(round(len(x_downsampled)*0.3))
-        x_train, x_test, y_train, y_test = train_test_split(x_downsampled,
-                                                            y_downsampled,
-                                                            test_size=size)
+    if outer_splits:
+        outer_tt_size = size/outer_splits
+        outer_tr_size = size - outer_tt_size
 
-        grid_srch = GridSearchCV(estimator=estimator,
-                                 param_grid=params,
-                                 cv=StratifiedKFold(n_splits=5),
-                                 scoring='roc_auc',
-                                 refit='roc_auc',
-                                 n_jobs=-1,
-                                 iid=True)
-        grid_srch.fit(x_train, y_train)
+        inner_tt_size = outer_tr_size/inner_splits
+        inner_tr_size = outer_tr_size - inner_tt_size
 
-        y_pred_proba = grid_srch.predict_proba(x_test)[:, 1]
+        title = (f'CV splits, outer/inner: {outer_splits}/{inner_splits}\n'
+                 'Outer training/test set sizes: '
+                 f'{outer_tr_size:.0f}/{outer_tt_size:.0f}\n'
+                 'Inner training/test set sizes: '
+                 f'{inner_tr_size:.0f}/{inner_tt_size:.0f}\n')
+    else:
+        inner_tt_size = size/inner_splits
+        inner_tr_size = size - inner_tt_size
 
-        yield {'estimator': grid_srch,
-               'y_test': y_test,
-               'y_pred_proba': y_pred_proba}
+        title = (f'CV splits: {inner_splits}\n'
+                 'Training/test set sizes: '
+                 f'{inner_tr_size:.0f}/{inner_tt_size:.0f}\n')
+
+    if not balance:
+        imbalance = sum(y)/len(y)
+        title += f'Imbalance: {imbalance:.0%}/{1 - imbalance:.0%}'
+
+
+    labels, scores, _ = zip(*results)
+    axes[0].boxplot(scores, labels=labels)
+
+    for label, score in zip(labels, scores):
+        axes[1].plot(score, label=label)
+
+    plt.legend(loc='upper right')
+    plt.ylabel(scoring)
+    fig.suptitle(title, x=0, y=0, ha='left', va='top')
 
 
 def collect_metrics(models, threshold):

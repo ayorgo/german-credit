@@ -15,13 +15,13 @@ class ThresholdBinner(BaseEstimator, TransformerMixin):
     def __init__(self, threshold):
         self.threshold = threshold
 
-    def fit(self, X):
+    def fit(self, X, y=None):
         counts = X.iloc[:,0].value_counts(normalize=True).sort_index()
         self.max_value = counts.index.max()
         self.above_threshold = counts[counts >= self.threshold].index.values
         return self
 
-    def transform(self, X):
+    def transform(self, X, y=None):
         def mapper(x):
             for i in self.above_threshold:
                 if x <= i:
@@ -35,10 +35,10 @@ class NominalMapper(BaseEstimator, TransformerMixin):
     def __init__(self, mapper):
         self.mapper = mapper
 
-    def fit(self, X):
+    def fit(self, X, y=None):
         return self
 
-    def transform(self, X):
+    def transform(self, X, y=None):
         return X.iloc[:,0].map(self.mapper).values.reshape(-1, 1)
 
 
