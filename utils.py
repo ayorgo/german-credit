@@ -117,6 +117,8 @@ def nested_cv(X, y, est, p_grid, scoring, inner_splits, outer_splits,
 def compare_classifiers(X, y, ests, scoring, trials, inner_splits,
                         outer_splits=None, randcv_budget=20):
 
+    results = []
+
     # For every model type
     for label, steps, p_grid in ests:
         cv_scores = np.empty(trials, dtype=float)
@@ -134,7 +136,9 @@ def compare_classifiers(X, y, ests, scoring, trials, inner_splits,
                                                                inner_splits,
                                                                outer_splits,
                                                                randcv_budget)
-        yield label, cv_scores, cv_estimators
+        results.append((label, cv_scores, cv_estimators))
+
+    return results
 
 
 def visualise_scores(results, y, scoring, balance, inner_splits,
